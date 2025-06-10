@@ -84,5 +84,3 @@ if st.button("🔍 Search Flights"):
             st.warning("No flights found.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
-
-

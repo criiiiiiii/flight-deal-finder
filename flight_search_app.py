@@ -10,17 +10,28 @@ date_from = st.date_input("Earliest Departure Date", datetime(2025, 8, 15))
 date_to = st.date_input("Latest Return Date", datetime(2025, 12, 31))
 
 if st.button("🔍 Search Deals"):
-    url = "https://api.skypicker.com/flights"
-    params = {
+    url = "https://kiwi-flight-search.p.rapidapi.com/flights"
+    
+    querystring = {
         "fly_from": origin,
         "date_from": date_from.strftime("%d/%m/%Y"),
         "date_to": date_to.strftime("%d/%m/%Y"),
-        "partner": "picky",
-        "limit": 5,
-        "curr": "USD"
+        "nights_in_dst_from": "7",
+        "nights_in_dst_to": "14",
+        "adults": "2",
+        "children": "2",
+        "curr": "USD",
+        "limit": "5",
+        "max_stopovers": "1"
     }
 
-    response = requests.get(url, params=params)
+    headers = {
+        "X-RapidAPI-Key": 215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae,  # <-- replace this!
+        "X-RapidAPI-Host": "kiwi-flight-search.p.rapidapi.com"
+    }
+
+    response = requests.get(url, headers=headers, params=querystring)
+
     if response.status_code == 200:
         data = response.json()
         flights = data.get("data", [])
@@ -42,4 +53,3 @@ if st.button("🔍 Search Deals"):
             st.warning("No flights found for the given parameters.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
-

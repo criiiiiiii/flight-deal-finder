@@ -10,45 +10,37 @@ date_from = st.date_input("Earliest Departure Date", datetime(2025, 8, 15))
 date_to = st.date_input("Latest Return Date", datetime(2025, 12, 31))
 
 if st.button("🔍 Search Deals"):
-    url = "https://kiwi-com.p.rapidapi.com/api/v2/search"
+    url = "https://kiwi-com-cheap-flights.p.rapidapi.com/roundtrip"
 
     querystring = {
-        "fly_from": origin,
-        "date_from": date_from.strftime("%d/%m/%Y"),
-        "date_to": date_to.strftime("%d/%m/%Y"),
+        "from": origin,
         "adults": "2",
         "children": "2",
-        "curr": "USD",
-        "limit": "5",
-        "max_stopovers": "1"
+        "currency": "USD",
+        "departureDate": date_from.strftime("%Y-%m-%d"),
+        "returnDate": date_to.strftime("%Y-%m-%d")
     }
 
     headers = {
         "X-RapidAPI-Key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae",
-        "X-RapidAPI-Host": "kiwi-com.p.rapidapi.com"
+        "X-RapidAPI-Host": "kiwi-com-cheap-flights.p.rapidapi.com"
     }
 
     response = requests.get(url, headers=headers, params=querystring)
 
     if response.status_code == 200:
         data = response.json()
-        flights = data.get("data", [])
-        if flights:
-            for flight in flights:
-                city_to = flight["cityTo"]
-                price = flight["price"]
-                route = " ➔ ".join([r["cityTo"] for r in flight["route"]])
-                dtime = datetime.fromtimestamp(flight["dTimeUTC"]).strftime("%Y-%m-%d %H:%M")
-                atime = datetime.fromtimestamp(flight["aTimeUTC"]).strftime("%Y-%m-%d %H:%M")
+        if isinstance(data, list) and len(data) > 0:
+            for flight in data:
+                dest = flight.get("to", "Unknown")
+                price = flight.get("price", "N/A")
                 st.markdown(f"""
-                **✈️ To {city_to} — ${price}**  
-                Route: {route}  
-                Departure: {dtime} UTC  
-                Arrival: {atime} UTC  
+                **✈️ Destination: {dest} — ${price}**  
                 ---
                 """)
         else:
             st.warning("No flights found for the given parameters.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
+
 

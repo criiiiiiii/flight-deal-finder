@@ -14,40 +14,18 @@ HEADERS  = {
 
 # ─── FULL AIRPORT LISTS BY REGION ──────────────────────────────────────────────
 REGION_AIRPORTS = {
-    "North America": [
-        "ATL","PEK","LAX","ORD","DFW","DEN","JFK","SFO","LAS","CLT",
-        "MCO","EWR","PHX","IAH","SEA","MIA","MSP","BOS","DTW","PHL",
-        "LGA","FLL","BWI","SLC","DCA","HOU","SAN","TPA","PDX","STL",
-        # add more IATA codes as needed…
-    ],
-    "Central America": [
-        "PTY","SAL","GUA","SJO","BZE","SAP","LIR","PTY","SJO","GUA"
-    ],
-    "South America": [
-        "GRU","EZE","SCL","BOG","LIM","GIG","MVD","CWB","SBE","GYN",
-        "REC","FOR","BEL","POA","BRC","CLO","CIX","LIM","EZE","SCL"
-    ],
-    "Europe": [
-        "LHR","CDG","AMS","FRA","IST","MAD","BCN","MUC","HEL","DME",
-        "FCO","LGW","ZRH","VIE","ARN","CPH","SVO","LED","ATH","BRU"
-    ],
-    "Asia": [
-        "PEK","PVG","DXB","HKG","DEL","ICN","BKK","SIN","NRT","KUL",
-        "CAN","DEN","CGK","MNL","TPE","SHA","SHJ","BOM","SYD","AKL"
-    ],
-    "Oceania": [
-        "SYD","MEL","AKL","BNE","PER","CNS","OOL","WLG","CHC","ADL"
-    ],
-    "Africa": [
-        "JNB","CAI","CMN","NBO","ACC","LOS","DUR","DRG","KRT","ADD"
-    ],
-    "Middle East": [
-        "DXB","DOH","JED","RUH","IST","AMM","BEY","TLV","MCT","KWI"
-    ]
+    "North America": ["LAX","JFK","ORD","ATL","DFW","MIA","SEA","SFO","YYZ","YVR"],
+    "Central America": ["PTY","SAL","GUA","SJO"],
+    "South America": ["GRU","EZE","SCL","BOG","LIM"],
+    "Europe": ["LHR","CDG","FRA","AMS","MAD","BCN","ZRH","MUC","FCO","IST"],
+    "Asia": ["HKG","BKK","SIN","NRT","PVG","ICN","DEL","DXB","KUL","MNL"],
+    "Oceania": ["SYD","MEL","AKL","BNE","PER"],
+    "Africa": ["JNB","CAI","CMN","NBO","ACC"],
+    "Middle East": ["DXB","DOH","JED","RUH","IST"]
 }
 ALL_REGIONS = list(REGION_AIRPORTS.keys())
 
-# ─── Helper Functions ─────────────────────────────────────────────────────────
+# ─── Helpers ─────────────────────────────────────────────────────────────────
 
 def fmt_dt(iso: str) -> str:
     dt = datetime.fromisoformat(iso)
@@ -77,41 +55,54 @@ def search_cheapest(
     r = requests.get(url, headers=HEADERS, params=params)
     if r.status_code != 200:
         return None
-    data    = r.json().get("data",{})
-    itins   = data.get("itineraries",{})
-    results = itins.get("results",[])
+    data    = r.json().get("data", {})
+    itins   = data.get("itineraries", {})
+    results = itins.get("results", [])
     if not results:
         return None
-    # cheapest by raw price
     return min(results, key=lambda x: x.get("price",{}).get("raw", float('inf')))
 
 def build_row(origin, result):
     legs = result.get("legs", [])
-    frm = legs[0]["origin"]["displayCode"]        if legs else ""
-    to  = legs[-1]["destination"]["displayCode"]   if legs else ""
-    dep_iso = legs[0].get("departure")             if legs else None
-    arr_iso = legs[-1].get("arrival")              if legs else None
-    dep = fmt_dt(dep_iso) if dep_iso else ""
-    arr = fmt_dt(arr_iso) if arr_iso else ""
-    # layovers
+    # To: full name + code
+    if legs:
+        dest_info = legs[-1]["destination"]
+        to = f"{dest_info.get('name','')} ({dest_info.get('displayCode','')})"
+    else:
+        to = ""
+    # Depart / Arrive
+    if legs:
+        dep = fmt_dt(legs[0]["departure"])
+        arr = fmt_dt(legs[-1]["arrival"])
+    else:
+        dep = arr = ""
+    # Layover details
     layovers = []
-    for i in range(len(legs) - 1):
-        airport = legs[i]["destination"]["displayCode"]
-        arr_t   = datetime.fromisoformat(legs[i]["arrival"])
-        dep_t   = datetime.fromisoformat(legs[i+1]["departure"])
-        delta   = dep_t - arr_t
-        hrs, rem = divmod(delta.seconds, 3600)
-        mins = rem // 60
-        layovers.append(f"{airport} ({hrs}h{mins:02d}m)")
-    stops_str = f"{len(legs)-1}" + (": " + ", ".join(layovers) if layovers else "")
-    # airline & flight #
-    mk = legs[0].get("carriers",{}).get("marketing",[]) if legs else []
-    airline = mk[0].get("name","") if mk else ""
-    fnums   = [seg.get("flightNumber","") for seg in legs]
+    for i in range(len(legs)-1):
+        stop_info = legs[i]["destination"]
+        code = stop_info.get("displayCode","")
+        name = stop_info.get("name","")
+        # compute duration
+        arr_t = datetime.fromisoformat(legs[i]["arrival"])
+        dep_t = datetime.fromisoformat(legs[i+1]["departure"])
+        delta = dep_t - arr_t
+        hrs, rem = divmod(delta.seconds,3600)
+        mins = rem//60
+        layovers.append(f"{name} ({code}) – {hrs}h{mins:02d}m")
+    stops_str = f"{len(layovers)} stop(s)" + (": " + "; ".join(layovers) if layovers else "")
+    # Airline
+    if legs:
+        mk = legs[0].get("carriers",{}).get("marketing",[])
+        airline = mk[0].get("name","") if mk else ""
+    else:
+        airline = ""
+    # Flight numbers
+    fnums = [seg.get("flightNumber","") for seg in legs]
     flights = ", ".join([f for f in fnums if f])
-    price   = result.get("price",{}).get("raw",None)
+    # Price
+    price = result.get("price",{}).get("raw",None)
+
     return {
-        "From":        frm,
         "To":          to,
         "Depart":      dep,
         "Arrive":      arr,
@@ -127,7 +118,7 @@ def main():
     st.set_page_config(page_title="Family Flight Finder", layout="wide")
     st.title("✈️ Family Flight Finder (by Region & Cost)")
 
-    # Departure airport
+    # 1) Departure Airport
     origin_map = {
         "Detroit (DTW)": "DTW",
         "Windsor (YQG)": "YQG",
@@ -136,13 +127,13 @@ def main():
     origin_lbl = st.selectbox("Departure Airport", list(origin_map.keys()))
     origin     = origin_map[origin_lbl]
 
-    # Region
+    # 2) Region
     region = st.selectbox("Destination Region", ALL_REGIONS)
 
-    # Trip type
+    # 3) Trip Type
     trip_type = st.radio("Trip Type", ["One-way", "Round-trip"], horizontal=True)
 
-    # Dates
+    # 4) Dates
     tomorrow    = date.today() + timedelta(days=1)
     depart_date = st.date_input("Departure Date", tomorrow)
     if trip_type=="Round-trip":
@@ -152,23 +143,24 @@ def main():
     else:
         return_date = None
 
-    # Passengers
+    # 5) Passengers
     adults   = st.slider("Adults", 1, 6, 2)
     children = st.slider("Children", 0, 4, 1)
 
-    # Price filters
-    min_text = st.text_input("Min Price ($)", "")
-    max_text = st.text_input("Max Price ($)", "")
+    # 6) Price filters
+    min_text = st.text_input("Min Price ($), blank=any", "")
+    max_text = st.text_input("Max Price ($), blank=any", "")
     try:
         min_price = int(min_text) if min_text.strip() else None
         max_price = int(max_text) if max_text.strip() else None
     except ValueError:
-        st.error("Price must be a number or left blank")
+        st.error("Price fields must be numeric or blank")
         return
 
+    # 7) Search button
     if st.button("🔍 Search by Region"):
-        st.info(f"Scanning airports in {region}…")
-        rows=[]
+        st.info(f"Scanning airports in {region}...")
+        rows = []
         for dest in REGION_AIRPORTS[region]:
             res = search_cheapest(
                 trip_type, origin, dest,
@@ -180,7 +172,7 @@ def main():
                 rows.append(build_row(origin, res))
 
         if not rows:
-            st.warning("No flights found for that region/filters.")
+            st.warning("No flights found for that region with your filters.")
             return
 
         df = pd.DataFrame(rows).sort_values("Price (USD)").head(10)
@@ -189,7 +181,6 @@ def main():
 
 if __name__=="__main__":
     main()
-
 
 
 

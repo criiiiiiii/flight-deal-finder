@@ -8,9 +8,6 @@ st.title("🌍 Family Flight Deal Finder")
 origin = st.selectbox("Departure Airport", ["DTW", "YQG"])
 date_from = st.date_input("Earliest Departure Date", datetime(2025, 8, 15))
 date_to = st.date_input("Latest Return Date", datetime(2025, 12, 31))
-max_stopovers = st.selectbox("Maximum Layovers", [0, 1])
-adults = 2
-children = 2
 
 if st.button("🔍 Search Deals"):
     url = "https://api.skypicker.com/flights"
@@ -18,14 +15,9 @@ if st.button("🔍 Search Deals"):
         "fly_from": origin,
         "date_from": date_from.strftime("%d/%m/%Y"),
         "date_to": date_to.strftime("%d/%m/%Y"),
-        "return_from": date_from.strftime("%d/%m/%Y"),
-        "return_to": date_to.strftime("%d/%m/%Y"),
         "partner": "picky",
-        "limit": 10,
-        "curr": "USD",
-        "adults": adults,
-        "children": children,
-        "max_stopovers": max_stopovers
+        "limit": 5,
+        "curr": "USD"
     }
 
     response = requests.get(url, params=params)
@@ -50,3 +42,4 @@ if st.button("🔍 Search Deals"):
             st.warning("No flights found for the given parameters.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
+

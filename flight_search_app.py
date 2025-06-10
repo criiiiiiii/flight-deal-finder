@@ -3,169 +3,184 @@ import requests
 from datetime import date, datetime, timedelta
 import pandas as pd
 
-# ─── Configuration ────────────────────────────────────────────────────────────
+# ─── Config ────────────────────────────────────────────────────────────────────
 API_KEY  = "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae"
 API_HOST = "flights-sky.p.rapidapi.com"
 BASE_URL = f"https://{API_HOST}/web/flights"
-
-HEADERS = {
+HEADERS  = {
     "x-rapidapi-host": API_HOST,
-    "x-rapidapi-key": API_KEY
+    "x-rapidapi-key":  API_KEY
 }
 
-# ─── Helper Functions ─────────────────────────────────────────────────────────
+# Map countries → regions (extend as needed)
+REGION_MAP = {
+    "United States":        "North America",
+    "Canada":               "North America",
+    "Mexico":               "North America",
+    "United Kingdom":       "Europe",
+    "France":               "Europe",
+    "Germany":              "Europe",
+    "Spain":                "Europe",
+    "Italy":                "Europe",
+    # add more country→region mappings here
+}
 
-def get_place_id(query: str) -> str:
-    url = f"{BASE_URL}/auto-complete"
-    params = {"q": query}
-    r = requests.get(url, headers=HEADERS, params=params)
-    if r.status_code == 200:
-        items = r.json().get("data", [])
-        if items:
-            return items[0].get("placeId")
+# ─── Helpers ─────────────────────────────────────────────────────────────────
+
+def get_place_id(q: str) -> str:
+    r = requests.get(f"{BASE_URL}/auto-complete",
+                     headers=HEADERS, params={"q": q})
+    if r.status_code==200:
+        data = r.json().get("data", [])
+        if data:
+            return data[0].get("placeId")
     return None
 
-def search_flights(
-    trip_type, place_from, place_to,
-    depart_date, return_date,
-    adults, children, min_price, max_price
-):
-    endpoint = "search-one-way" if trip_type=="One-way" else "search-roundtrip"
-    url = f"{BASE_URL}/{endpoint}"
+def search_flights(trip_type, frm, to, depart, ret, adults, kids, pmin, pmax):
+    ep = "search-one-way" if trip_type=="One-way" else "search-roundtrip"
+    url = f"{BASE_URL}/{ep}"
     params = {
-        "placeIdFrom": place_from,
-        "placeIdTo":   place_to,
-        "departDate":  depart_date.strftime("%Y-%m-%d"),
+        "placeIdFrom": frm,
+        "placeIdTo":   to,
+        "departDate":  depart.strftime("%Y-%m-%d"),
         "adults":      str(adults),
-        "children":    str(children),
+        "children":    str(kids),
         "currency":    "USD"
     }
     if trip_type=="Round-trip":
-        params["returnDate"] = return_date.strftime("%Y-%m-%d")
-    if min_price>0:
-        params["minPrice"] = str(min_price)
-    if max_price>0:
-        params["maxPrice"] = str(max_price)
+        params["returnDate"] = ret.strftime("%Y-%m-%d")
+    if pmin>0: params["minPrice"] = str(pmin)
+    if pmax>0: params["maxPrice"] = str(pmax)
 
     r = requests.get(url, headers=HEADERS, params=params)
-    if r.status_code != 200:
-        return None, f"Search failed: {r.status_code} {r.text}"
+    if r.status_code!=200:
+        return None, f"Search error {r.status_code}: {r.text}"
+    data    = r.json().get("data",{})
+    itins   = data.get("itineraries",{})
+    return itins.get("results",[]), None
 
-    data    = r.json().get("data", {})
-    itins   = data.get("itineraries", {})
-    results = itins.get("results", [])
-    return results, None
-
-def format_datetime_iso(dt_iso: str) -> str:
-    """
-    Converts an ISO timestamp into:
-      Monday, (June 9) 07:00 AM
-    """
-    dt = datetime.fromisoformat(dt_iso)
-    # %-d is day without leading zero on Linux
+def fmt_dt(iso: str) -> str:
+    dt = datetime.fromisoformat(iso)
     return dt.strftime("%A, (%B %-d) %I:%M %p")
 
-def format_results(results):
-    rows = []
+def build_df(results):
+    rows=[]
     for r in results:
-        legs = r.get("legs", [])
-        # From/To
-        frm = legs[0]["origin"].get("displayCode","")    if legs else ""
-        to  = legs[-1]["destination"].get("displayCode","") if legs else ""
-        # Departure/Arrival formatting
-        departure_iso = legs[0].get("departure") if legs else None
-        arrival_iso   = legs[-1].get("arrival") if legs else None
-        departure = format_datetime_iso(departure_iso) if departure_iso else ""
-        arrival   = format_datetime_iso(arrival_iso)   if arrival_iso   else ""
+        legs = r.get("legs",[])
+        # From / To
+        frm = legs[0]["origin"]["displayCode"]  if legs else ""
+        to  = legs[-1]["destination"]["displayCode"] if legs else ""
+        # Departure / Arrival
+        dep_iso = legs[0].get("departure") if legs else None
+        arr_iso = legs[-1].get("arrival")   if legs else None
+        dep = fmt_dt(dep_iso) if dep_iso else ""
+        arr = fmt_dt(arr_iso) if arr_iso else ""
         # Stops
-        stops = max(len(legs)-1, 0)
+        stops = max(len(legs)-1,0)
         # Airline
-        marketing = legs[0].get("carriers",{}).get("marketing",[]) if legs else []
-        airline   = marketing[0].get("name","") if marketing else ""
+        mkt = legs[0].get("carriers",{}).get("marketing",[]) if legs else []
+        airline = mkt[0].get("name","") if mkt else ""
+        # Country
+        country = legs[-1]["destination"].get("country","") if legs else ""
+        region  = REGION_MAP.get(country, "Other")
         # Price
-        price = r.get("price",{}).get("raw", None)
+        price = r.get("price",{}).get("raw",None)
+        # Flight numbers
+        fnums = [seg.get("flightNumber","") for seg in legs]
+        flights = ", ".join(fnums)
 
         rows.append({
             "From":        frm,
             "To":          to,
-            "Depart":      departure,
-            "Arrive":      arrival,
+            "Depart":      dep,
+            "Arrive":      arr,
             "Stops":       stops,
             "Airline":     airline,
+            "Country":     country,
+            "Region":      region,
+            "Flights #":   flights,
             "Price (USD)": price
         })
-
-    df = pd.DataFrame(rows)
-    df = df.sort_values("Price (USD)")
+    df = pd.DataFrame(rows).sort_values("Price (USD)")
     return df
 
-# ─── Streamlit App ───────────────────────────────────────────────────────────
+# ─── Streamlit UI ─────────────────────────────────────────────────────────────
 
 def main():
     st.set_page_config(page_title="Family Flight Finder", layout="wide")
     st.title("✈️ Family Flight Finder (Flights Sky API)")
 
-    # Departure Airport
-    origin_map = {
-        "Detroit (DTW)": "DTW",
-        "Windsor (YQG)": "YQG",
-        "Toronto (YYZ)": "YYZ"
-    }
-    origin_lbl = st.selectbox("Select Departure Airport", list(origin_map.keys()))
+    # Departure airport
+    origin_map = {"Detroit (DTW)":"DTW","Windsor (YQG)":"YQG","Toronto (YYZ)":"YYZ"}
+    origin_lbl = st.selectbox("Departure Airport", list(origin_map.keys()))
     origin     = origin_map[origin_lbl]
 
     # Destination
-    dest_input = st.text_input("Destination (city or IATA code)", "LAX").strip()
+    dest_inp = st.text_input("Destination (city or IATA)", "LAX").strip()
 
-    # Trip Type
-    trip_type = st.radio("Trip Type", ["One-way", "Round-trip"], horizontal=True)
+    # Trip type
+    trip_type = st.radio("Trip Type", ["One-way","Round-trip"], horizontal=True)
 
     # Dates
-    tomorrow    = date.today() + timedelta(days=1)
-    depart_date = st.date_input("Departure Date", tomorrow)
+    start = date.today()+timedelta(days=1)
+    depart_date = st.date_input("Departure Date", start)
     if trip_type=="Round-trip":
-        length      = st.slider("Trip Length (days)", 1, 30, 7)
+        length  = st.slider("Trip Length (days)",1,21,7)
         return_date = depart_date + timedelta(days=length)
         st.caption(f"🔁 Return Date: {return_date.strftime('%B %-d, %Y')}")
     else:
         return_date = None
 
     # Passengers
-    adults   = st.slider("Adults",   1, 6, 2)
-    children = st.slider("Children", 0, 4, 1)
+    adults = st.slider("Adults",1,6,2)
+    kids   = st.slider("Children",0,4,1)
 
-    # Price Filters
-    min_price = st.number_input("Min Price ($)", 0, 10000, 0, step=50)
-    max_price = st.number_input("Max Price ($)", 0, 10000, 1500, step=50)
+    # Price
+    pmin = st.number_input("Min Price ($)",0,10000,0,step=50)
+    pmax = st.number_input("Max Price ($)",0,10000,1500,step=50)
 
-    if st.button("🔍 Search Flights"):
-        # Resolve destination
-        if len(dest_input)==3 and dest_input.isalpha():
-            dest_code = dest_input.upper()
+    if st.button("🔍 Search"):
+        # Resolve dest
+        if len(dest_inp)==3 and dest_inp.isalpha():
+            dest = dest_inp.upper()
         else:
             st.info("Resolving destination…")
-            dest_code = get_place_id(dest_input)
-        if not dest_code:
+            dest = get_place_id(dest_inp)
+        if not dest:
             st.error("🚫 Could not resolve destination.")
             return
 
         st.info("Searching…")
         results, err = search_flights(
-            trip_type, origin, dest_code,
+            trip_type, origin, dest,
             depart_date, return_date,
-            adults, children,
-            min_price, max_price
+            adults, kids, pmin, pmax
         )
         if err:
             st.error(err); return
         if not results:
             st.warning("No flights found."); return
 
-        df = format_results(results)
-        st.write(f"### Found {df.shape[0]} options")
+        df = build_df(results)
+
+        # Filters on results
+        st.sidebar.header("Refine Results")
+        sel_air = st.sidebar.multiselect("Airline", df["Airline"].unique())
+        sel_reg = st.sidebar.multiselect("Region", df["Region"].unique())
+        sel_cty = st.sidebar.multiselect("Country", df["Country"].unique())
+
+        if sel_air:
+            df = df[df["Airline"].isin(sel_air)]
+        if sel_reg:
+            df = df[df["Region"].isin(sel_reg)]
+        if sel_cty:
+            df = df[df["Country"].isin(sel_cty)]
+
+        st.write(f"### {df.shape[0]} options found")
         st.dataframe(df.reset_index(drop=True), use_container_width=True)
 
 if __name__=="__main__":
     main()
+
 
 

@@ -1,48 +1,48 @@
 import streamlit as st
 import requests
-from datetime import datetime
 
-st.title("🌍 Family Flight Deal Finder")
+st.title("🛫 One-Way Flight Finder (Fly Scraper API)")
 
-# --- Inputs ---
-origin = st.selectbox("Departure Airport", ["DTW", "YQG"])
-date_from = st.date_input("Earliest Departure Date", datetime(2025, 8, 15))
-date_to = st.date_input("Latest Return Date", datetime(2025, 12, 31))
+# --- Input selection ---
+origin = st.selectbox("Origin (SkyID)", ["PARI", "DTMI", "YQGI"])
+destination = st.selectbox("Destination (SkyID)", ["MSYA", "NYCA", "LONA"])
 
-if st.button("🔍 Search Deals"):
-    url = "https://kiwi-com-cheap-flights.p.rapidapi.com/roundtrip"
-
+if st.button("🔍 Search Flights"):
+    url = "https://fly-scraper.p.rapidapi.com/flights/search-one-way"
     querystring = {
-        "from": origin,
-        "adults": "2",
-        "children": "2",
-        "currency": "USD",
-        "departureDate": date_from.strftime("%Y-%m-%d"),
-        "returnDate": date_to.strftime("%Y-%m-%d")
+        "originSkyId": origin,
+        "destinationSkyId": destination
     }
 
     headers = {
-        "X-RapidAPI-Key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae",
-        "X-RapidAPI-Host": "kiwi-com-cheap-flights.p.rapidapi.com"
+        "x-rapidapi-host": "fly-scraper.p.rapidapi.com",
+        "x-rapidapi-key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae"
     }
 
     response = requests.get(url, headers=headers, params=querystring)
 
     if response.status_code == 200:
         data = response.json()
-        itineraries = data.get("Itineraries", [])
-        if itineraries:
-            for flight in itineraries:
-                dest = flight.get("to", "Unknown")
-                price = flight.get("price", "N/A")
+        results = data.get("results", [])
+        if results:
+            for result in results:
+                airline = result.get("airline", "Unknown")
+                from_city = result.get("fromCity", "Unknown")
+                to_city = result.get("toCity", "Unknown")
+                price = result.get("price", "N/A")
+                departure = result.get("departureTime", "N/A")
+                arrival = result.get("arrivalTime", "N/A")
+
                 st.markdown(f"""
-                **✈️ Destination: {dest} — ${price}**  
+                **✈️ {from_city} → {to_city}**  
+                Airline: {airline}  
+                Price: ${price}  
+                Departure: {departure}  
+                Arrival: {arrival}  
                 ---
                 """)
         else:
-            st.warning("No flights found for the given parameters.")
+            st.warning("No results returned for that route.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
-
-
 

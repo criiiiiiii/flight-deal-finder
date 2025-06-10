@@ -11,7 +11,7 @@ date_to = st.date_input("Latest Return Date", datetime(2025, 12, 31))
 
 if st.button("🔍 Search Deals"):
     url = "https://kiwi-flight-search.p.rapidapi.com/flights"
-    
+
     querystring = {
         "fly_from": origin,
         "date_from": date_from.strftime("%d/%m/%Y"),
@@ -26,7 +26,7 @@ if st.button("🔍 Search Deals"):
     }
 
     headers = {
-        "X-RapidAPI-Key": 215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae,  # <-- replace this!
+        "X-RapidAPI-Key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae",  # your actual key
         "X-RapidAPI-Host": "kiwi-flight-search.p.rapidapi.com"
     }
 
@@ -53,3 +53,4 @@ if st.button("🔍 Search Deals"):
             st.warning("No flights found for the given parameters.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
+

@@ -1,0 +1,10 @@
+{
+  "North America": ["LAX", "JFK", "ORD", "ATL", "DFW", "MIA", "SEA", "SFO", "YYZ", "YVR", /* …more… */],
+  "Central America": ["PTY", "SAL", "GUA", "SJO", /* …more… */],
+  "South America": ["GRU", "EZE", "SCL", "BOG", "LIM", /* …more… */],
+  "Europe":         ["LHR", "CDG", "FRA", "AMS", "MAD", "BCN", "ZRH", "MUC", "FCO", "IST", /* … */],
+  "Asia":           ["HKG", "BKK", "SIN", "NRT", "PVG", "ICN", "DEL", "DXB", "KUL", "MNL", /* … */],
+  "Oceania":        ["SYD", "MEL", "AKL", "BNE", "PER", /* … */],
+  "Africa":         ["JNB", "CAI", "CMN", "NBO", "ACC", /* … */],
+  "Middle East":    ["DXB", "DOH", "JED", "RUH", "IST", /* … */]
+}

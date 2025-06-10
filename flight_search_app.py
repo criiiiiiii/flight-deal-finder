@@ -2,85 +2,66 @@ import streamlit as st
 import requests
 from datetime import date, timedelta
 
-st.title("🛫 Flight Deal Finder (Fly Scraper API)")
+st.title("🛫 Flight Finder (Flights Sky API)")
 
-# --- Origin Selection ---
-origin_map = {
-    "Detroit (DTW)": "DTMI",
-    "Windsor (YQG)": "YQGI",
-    "Toronto (YYZ)": "YYZI"
-}
-origin_choice = st.selectbox("Origin Airport", list(origin_map.keys()))
-origin_sky_id = origin_map[origin_choice]
-
-# --- Destination Input ---
-destination = st.text_input("Destination SkyID (e.g. NYCA, MSYA, LONA)", "NYCA")
-
-# --- Trip Type ---
+# --- User Inputs ---
 trip_type = st.radio("Trip Type", ["One-way", "Round-trip"])
 
-# --- Dates ---
+origin = st.text_input("Origin Airport Code (e.g. DTW)", "DTW")
+destination = st.text_input("Destination Airport Code (e.g. LAX)", "LAX")
+
 departure_date = st.date_input("Departure Date", date.today() + timedelta(days=30))
-trip_length = st.slider("Trip Length (days)", min_value=3, max_value=21, value=7)
-return_date = departure_date + timedelta(days=trip_length)
 
-# --- Passengers ---
-adults = st.slider("Adults", min_value=1, max_value=6, value=2)
-children = st.slider("Children", min_value=0, max_value=4, value=2)
-
-# --- Price Filter ---
-max_price = st.number_input("Max Price (USD)", min_value=50, max_value=5000, value=1000, step=50)
-
-# --- Trip Summary ---
 if trip_type == "Round-trip":
-    st.caption(f"🗓️ Round-trip: {departure_date.strftime('%Y-%m-%d')} → {return_date.strftime('%Y-%m-%d')}")
+    return_date = st.date_input("Return Date", departure_date + timedelta(days=7))
 else:
-    st.caption(f"🗓️ One-way trip on {departure_date.strftime('%Y-%m-%d')}")
+    return_date = None
+
+adults = st.slider("Adults", 1, 6, 2)
+children = st.slider("Children", 0, 4, 0)
+
+currency = st.selectbox("Currency", ["USD", "CAD", "EUR"], index=0)
 
 # --- API Call ---
 if st.button("🔍 Search Flights"):
-    url = "https://fly-scraper.p.rapidapi.com/flights/search-one-way"
+    url = "https://flights-sky.p.rapidapi.com/web/flights/search"
 
     querystring = {
-        "originSkyId": origin_sky_id,
-        "destinationSkyId": destination,
+        "origin": origin,
+        "destination": destination,
+        "depart": departure_date.strftime("%Y-%m-%d"),
         "adults": str(adults),
         "children": str(children),
-        "maxPrice": str(max_price),
-        "currency": "USD"
-    }
-
-    headers = {
-        "x-rapidapi-host": "fly-scraper.p.rapidapi.com",
-        "x-rapidapi-key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae"
+        "currency": currency
     }
 
     if trip_type == "Round-trip":
-        st.info("🔁 Round-trip selected, but only one-way results are supported for now.")
+        querystring["return"] = return_date.strftime("%Y-%m-%d")
+
+    headers = {
+        "x-rapidapi-key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae",
+        "x-rapidapi-host": "flights-sky.p.rapidapi.com"
+    }
 
     response = requests.get(url, headers=headers, params=querystring)
 
     if response.status_code == 200:
         data = response.json()
-        results = data.get("results", [])
+        results = data.get("data", [])
         if results:
-            for result in results:
-                airline = result.get("airline", "Unknown")
-                from_city = result.get("fromCity", "Unknown")
-                to_city = result.get("toCity", "Unknown")
-                price = result.get("price", "N/A")
-                departure = result.get("departureTime", "N/A")
-                arrival = result.get("arrivalTime", "N/A")
+            for flight in results:
+                price = flight.get("price", {}).get("raw", "N/A")
+                from_code = flight.get("origin", {}).get("code", "")
+                to_code = flight.get("destination", {}).get("code", "")
+                airline = flight.get("airline", {}).get("name", "Unknown")
 
                 st.markdown(f"""
-                **✈️ {from_city} → {to_city}**  
+                **✈️ {from_code} → {to_code}**  
                 Airline: {airline}  
-                Price: ${price}  
-                Departure: {departure}  
-                Arrival: {arrival}  
+                Price: {currency} {price}  
                 ---
                 """)
         else:
             st.warning("No flights found.")
     else:
-        st.error(f"API request failed with status code {response.status_code}")
+        st.error(f"API request failed: {response.status_code} — {response.text}")

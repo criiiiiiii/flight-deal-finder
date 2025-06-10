@@ -2,9 +2,9 @@ import streamlit as st
 import requests
 from datetime import date, timedelta
 
-st.title("🛫 Flight Deal Finder ")
+st.title("🛫 Flight Deal Finder (Fly Scraper API)")
 
-# --- Input: Search Filters ---
+# --- Origin Selection ---
 origin_map = {
     "Detroit (DTW)": "DTMI",
     "Windsor (YQG)": "YQGI",
@@ -13,16 +13,26 @@ origin_map = {
 origin_choice = st.selectbox("Origin Airport", list(origin_map.keys()))
 origin_sky_id = origin_map[origin_choice]
 
-# Placeholder destination list for now (we'll improve this later)
+# --- Destination Input ---
 destination = st.text_input("Destination SkyID (e.g. NYCA, MSYA, LONA)", "NYCA")
 
-# Trigger search
+# --- Date + Trip Length ---
+departure_date = st.date_input("Departure Date", date.today() + timedelta(days=30))
+trip_length = st.slider("Trip Length (days)", min_value=3, max_value=21, value=7)
+return_date = departure_date + timedelta(days=trip_length)
+
+# --- Debug view ---
+st.caption(f"🗓️ Your trip: {departure_date.strftime('%Y-%m-%d')} → {return_date.strftime('%Y-%m-%d')}")
+
+# --- API Call ---
 if st.button("🔍 Search Flights"):
     url = "https://fly-scraper.p.rapidapi.com/flights/search-one-way"
     querystring = {
         "originSkyId": origin_sky_id,
         "destinationSkyId": destination
+        # API currently only supports one-way; return_date saved for future use
     }
+
     headers = {
         "x-rapidapi-host": "fly-scraper.p.rapidapi.com",
         "x-rapidapi-key": "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae"
@@ -53,4 +63,6 @@ if st.button("🔍 Search Flights"):
         else:
             st.warning("No flights found.")
     else:
+        st.error(f"API request failed with status code {response.status_code}")
+
         st.error(f"API request failed with status code {response.status_code}")

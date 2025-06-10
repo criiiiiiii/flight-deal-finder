@@ -1,7 +1,9 @@
 import streamlit as st
 import requests
+import json
 from datetime import date, datetime, timedelta
 import pandas as pd
+import os
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 API_KEY  = "215a6826f2mshc7e99c81ebbe6e0p129a86jsn13e40defdfae"
@@ -12,17 +14,14 @@ HEADERS  = {
     "x-rapidapi-key":  API_KEY
 }
 
-# Static region → top airports mapping
-REGION_AIRPORTS = {
-    "North America": ["LAX","JFK","ORD","ATL","DFW","MIA","SEA","SFO","YYZ","YVR"],
-    "Central America": ["PTY","SAL","GUA","SJO"],
-    "South America": ["GRU","EZE","SCL","BOG","LIM"],
-    "Europe": ["LHR","CDG","FRA","AMS","MAD","BCN","ZRH","MUC","FCO","IST"],
-    "Asia": ["HKG","BKK","SIN","NRT","PVG","ICN","DEL","DXB","KUL","MNL"],
-    "Oceania": ["SYD","MEL","AKL","BNE","PER"],
-    "Africa": ["JNB","CAI","CMN","NBO","ACC"],
-    "Middle East": ["DXB","DOH","JED","RUH","IST"]
-}
+# ─── Load region_airports.json ────────────────────────────────────────────────
+REGION_FILE = "region_airports.json"
+if os.path.exists(REGION_FILE):
+    with open(REGION_FILE, "r") as f:
+        REGION_AIRPORTS = json.load(f)
+else:
+    st.error(f"Missing {REGION_FILE} — please add it to your repo with your full lists.")
+    st.stop()
 ALL_REGIONS = list(REGION_AIRPORTS.keys())
 
 # ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -31,55 +30,62 @@ def fmt_dt(iso: str) -> str:
     dt = datetime.fromisoformat(iso)
     return dt.strftime("%A, (%B %-d) %I:%M %p")
 
-def search_cheapest(
-    trip_type, origin, dest, depart, rtn,
-    adults, children, min_price, max_price
-):
-    ep = "search-one-way" if trip_type=="One-way" else "search-roundtrip"
+def search_cheapest(trip, origin, dest, depart, rtn, adults, kids, pmin, pmax):
+    ep = "search-one-way" if trip=="One-way" else "search-roundtrip"
     url = f"{BASE_URL}/{ep}"
     params = {
         "placeIdFrom": origin,
         "placeIdTo":   dest,
         "departDate":  depart.strftime("%Y-%m-%d"),
         "adults":      str(adults),
-        "children":    str(children),
+        "children":    str(kids),
         "currency":    "USD"
     }
-    if trip_type=="Round-trip":
+    if trip=="Round-trip":
         params["returnDate"] = rtn.strftime("%Y-%m-%d")
-    if min_price is not None:
-        params["minPrice"] = str(min_price)
-    if max_price is not None:
-        params["maxPrice"] = str(max_price)
+    if pmin is not None: params["minPrice"] = str(pmin)
+    if pmax is not None: params["maxPrice"] = str(pmax)
 
     r = requests.get(url, headers=HEADERS, params=params)
     if r.status_code != 200:
         return None
-    data    = r.json().get("data", {})
-    itins   = data.get("itineraries", {})
-    results = itins.get("results", [])
+    data    = r.json().get("data",{})
+    itins   = data.get("itineraries",{})
+    results = itins.get("results",[])
     if not results:
         return None
-    return min(results, key=lambda x: x.get("price", {}).get("raw", float('inf')))
+    return min(results, key=lambda x: x.get("price",{}).get("raw", float("inf")))
 
 def build_row(origin, result):
     legs = result.get("legs", [])
-    frm    = legs[0]["origin"]["displayCode"]    if legs else ""
-    to     = legs[-1]["destination"]["displayCode"] if legs else ""
-    dep    = fmt_dt(legs[0]["departure"])        if legs else ""
-    arr    = fmt_dt(legs[-1]["arrival"])         if legs else ""
-    stops  = max(len(legs)-1, 0)
-    mkt    = legs[0].get("carriers", {}).get("marketing", []) if legs else []
-    airline= mkt[0].get("name","")                if mkt else ""
-    price  = result.get("price", {}).get("raw", None)
-    fnums  = [seg.get("flightNumber","") for seg in legs]
-    flights= ", ".join([f for f in fnums if f])
+    frm = legs[0]["origin"]["displayCode"] if legs else ""
+    to  = legs[-1]["destination"]["displayCode"] if legs else ""
+    dep = fmt_dt(legs[0]["departure"])   if legs else ""
+    arr = fmt_dt(legs[-1]["arrival"])     if legs else ""
+    stops = max(len(legs)-1,0)
+    layovers = []
+    for i in range(len(legs)-1):
+        airport = legs[i]["destination"]["displayCode"]
+        arr_t   = datetime.fromisoformat(legs[i]["arrival"])
+        dep_t   = datetime.fromisoformat(legs[i+1]["departure"])
+        delta   = dep_t - arr_t
+        hrs, rem = divmod(delta.seconds,3600)
+        mins = rem//60
+        layovers.append(f"{airport} ({hrs}h{mins:02d}m)")
+    stops_str = f"{stops}" + (": " + ", ".join(layovers) if layovers else "")
+
+    mk  = legs[0].get("carriers",{}).get("marketing",[]) if legs else []
+    airline = mk[0].get("name","") if mk else ""
+    price   = result.get("price",{}).get("raw",None)
+    fnums   = [seg.get("flightNumber","") for seg in legs]
+    flights = ", ".join([f for f in fnums if f])
+
     return {
         "From":        frm,
         "To":          to,
         "Depart":      dep,
         "Arrive":      arr,
-        "Stops":       stops,
+        "Stops":       stops_str,
         "Airline":     airline,
         "Flight #":    flights,
         "Price (USD)": price
@@ -88,52 +94,51 @@ def build_row(origin, result):
 # ─── Streamlit App ───────────────────────────────────────────────────────────
 
 def main():
-    st.set_page_config(page_title="Family Flight Finder", layout="wide")
+    st.set_page_config(page_title="Flight Finder by Region", layout="wide")
     st.title("✈️ Family Flight Finder (by Region & Cost)")
 
-    # 1) Departure Airport
-    origin_map = {"Detroit (DTW)": "DTW", "Windsor (YQG)": "YQG", "Toronto (YYZ)": "YYZ"}
+    # Departure Airport
+    origin_map = {
+        "Detroit (DTW)": "DTW",
+        "Windsor (YQG)": "YQG",
+        "Toronto (YYZ)": "YYZ"
+    }
     origin_lbl = st.selectbox("Departure Airport", list(origin_map.keys()))
     origin     = origin_map[origin_lbl]
 
-    # 2) Region selector
+    # Region selector (full list from JSON)
     region = st.selectbox("Destination Region", ALL_REGIONS)
 
-    # 3) Trip type
-    trip_type = st.radio("Trip Type", ["One-way", "Round-trip"], horizontal=True)
+    # Trip Type
+    trip_type = st.radio("Trip Type", ["One-way","Round-trip"], horizontal=True)
 
-    # 4) Dates
+    # Dates
     tomorrow    = date.today() + timedelta(days=1)
     depart_date = st.date_input("Departure Date", tomorrow)
     if trip_type=="Round-trip":
-        length     = st.slider("Trip Length (days)", 1, 30, 7)
+        length     = st.slider("Trip Length (days)",1,30,7)
         return_date= depart_date + timedelta(days=length)
-        st.caption(f"🔁 Return Date: {return_date.strftime('%B %-d, %Y')}")
+        st.caption(f"🔁 Return Date: {return_date}")
     else:
         return_date = None
 
-    # 5) Passengers
-    adults   = st.slider("Adults", 1, 6, 2)
-    children = st.slider("Children", 0, 4, 1)
+    # Passengers
+    adults   = st.slider("Adults",1,6,2)
+    children = st.slider("Children",0,4,1)
 
-    # 6) Price fields (optional; blank = any)
-    min_text = st.text_input("Min Price ($) – leave blank for no minimum", "")
-    max_text = st.text_input("Max Price ($) – leave blank for no maximum", "")
+    # Price filters (blank = any)
+    min_text = st.text_input("Min Price ($)", "")
+    max_text = st.text_input("Max Price ($)", "")
     try:
         min_price = int(min_text) if min_text.strip() else None
-    except ValueError:
-        st.error("Min Price must be a number or blank")
-        return
-    try:
         max_price = int(max_text) if max_text.strip() else None
     except ValueError:
-        st.error("Max Price must be a number or blank")
+        st.error("Price must be numeric or blank")
         return
 
-    # 7) Search
     if st.button("🔍 Search by Region"):
-        st.info(f"Searching top airports in {region}…")
-        rows = []
+        st.info(f"Scanning airports in {region}…")
+        rows=[]
         for dest in REGION_AIRPORTS[region]:
             result = search_cheapest(
                 trip_type, origin, dest,
@@ -145,15 +150,16 @@ def main():
                 rows.append(build_row(origin, result))
 
         if not rows:
-            st.warning("No flights found in that region with those filters.")
+            st.warning("No flights found.")
             return
 
         df = pd.DataFrame(rows).sort_values("Price (USD)").head(10)
         st.write(f"### Top 10 cheapest flights to {region}")
         st.dataframe(df.reset_index(drop=True), use_container_width=True)
 
-if __name__ == "__main__":
+if __name__=="__main__":
     main()
+
 
 
 

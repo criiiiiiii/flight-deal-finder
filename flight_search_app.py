@@ -4,7 +4,7 @@ from datetime import datetime
 
 st.title("🌍 Family Flight Deal Finder")
 
-# --- Search Inputs ---
+# --- Inputs ---
 origin = st.selectbox("Departure Airport", ["DTW", "YQG"])
 date_from = st.date_input("Earliest Departure Date", datetime(2025, 8, 15))
 date_to = st.date_input("Latest Return Date", datetime(2025, 12, 31))
@@ -30,8 +30,9 @@ if st.button("🔍 Search Deals"):
 
     if response.status_code == 200:
         data = response.json()
-        if isinstance(data, list) and len(data) > 0:
-            for flight in data:
+        itineraries = data.get("Itineraries", [])
+        if itineraries:
+            for flight in itineraries:
                 dest = flight.get("to", "Unknown")
                 price = flight.get("price", "N/A")
                 st.markdown(f"""
@@ -42,5 +43,6 @@ if st.button("🔍 Search Deals"):
             st.warning("No flights found for the given parameters.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
+
 
 

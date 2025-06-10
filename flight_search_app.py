@@ -28,6 +28,9 @@ return_date = departure_date + timedelta(days=trip_length)
 adults = st.slider("Adults", min_value=1, max_value=6, value=2)
 children = st.slider("Children", min_value=0, max_value=4, value=2)
 
+# --- Price Filter ---
+max_price = st.number_input("Max Price (USD)", min_value=50, max_value=5000, value=1000, step=50)
+
 # --- Trip Summary ---
 if trip_type == "Round-trip":
     st.caption(f"🗓️ Round-trip: {departure_date.strftime('%Y-%m-%d')} → {return_date.strftime('%Y-%m-%d')}")
@@ -42,7 +45,9 @@ if st.button("🔍 Search Flights"):
         "originSkyId": origin_sky_id,
         "destinationSkyId": destination,
         "adults": str(adults),
-        "children": str(children)
+        "children": str(children),
+        "maxPrice": str(max_price),
+        "currency": "USD"
     }
 
     headers = {

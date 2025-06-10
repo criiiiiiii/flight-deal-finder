@@ -1,6 +1,5 @@
 import streamlit as st
 import requests
-import time
 from datetime import date, timedelta
 
 # ─── Configuration ────────────────────────────────────────────────────────────
@@ -17,8 +16,7 @@ HEADERS = {
 
 def get_place_id(query: str) -> str:
     """
-    Hits /web/flights/auto-complete to resolve a free-text city/airport
-    into the API's placeId (IATA code).
+    Hits /auto-complete to resolve a city/airport name into the API's placeId.
     """
     url = f"{BASE_URL}/auto-complete"
     params = {"q": query}
@@ -41,8 +39,8 @@ def search_flights(
     max_price: float
 ):
     """
-    Calls search-one-way or search-roundtrip, then polls search-incomplete
-    until status == "complete". Returns (results, error_message).
+    Calls the one-way or round-trip search endpoint once,
+    then returns the data->itineraries->results list directly.
     """
     endpoint = "search-one-way" if trip_type=="One-way" else "search-roundtrip"
     url = f"{BASE_URL}/{endpoint}"
@@ -57,32 +55,21 @@ def search_flights(
     }
     if trip_type=="Round-trip":
         params["returnDate"] = return_date.strftime("%Y-%m-%d")
-    if min_price>0: params["minPrice"] = str(min_price)
-    if max_price>0: params["maxPrice"] = str(max_price)
+    if min_price>0:
+        params["minPrice"] = str(min_price)
+    if max_price>0:
+        params["maxPrice"] = str(max_price)
 
     r = requests.get(url, headers=HEADERS, params=params)
-    if r.status_code!=200:
+    if r.status_code != 200:
         return None, f"Search failed: {r.status_code} {r.text}"
 
-    data     = r.json().get("data", {})
-    context  = data.get("context", {})
-    status   = context.get("status")
-    token    = context.get("sessionId")
-    itins    = data.get("itineraries", {})
+    # Drill into response
+    resp_json   = r.json()
+    data        = resp_json.get("data", resp_json)
+    itineraries = data.get("itineraries", {})
+    results     = itineraries.get("results", [])
 
-    # Poll if incomplete
-    while status=="incomplete":
-        time.sleep(1)
-        inc = requests.get(f"{BASE_URL}/search-incomplete",
-                           headers=HEADERS, params={"token": token})
-        if inc.status_code!=200:
-            return None, f"Incomplete check failed: {inc.status_code}"
-        inc_data  = inc.json().get("data", {})
-        context   = inc_data.get("context", {})
-        status    = context.get("status")
-        itins     = inc_data.get("itineraries", {})
-
-    results = itins.get("results", [])
     return results, None
 
 # ─── Streamlit App ───────────────────────────────────────────────────────────
@@ -91,7 +78,7 @@ def main():
     st.set_page_config(page_title="Family Flight Finder", layout="centered")
     st.title("✈️ Family Flight Finder (Flights Sky API)")
 
-    # 1) Origin (fixed set)
+    # 1) Departure airport (fixed list)
     origin_map = {
         "Detroit (DTW)": "DTW",
         "Windsor (YQG)": "YQG",
@@ -100,15 +87,15 @@ def main():
     origin_label = st.selectbox("Select Departure Airport", list(origin_map.keys()))
     origin_code  = origin_map[origin_label]
 
-    # 2) Destination (free-text or IATA)
+    # 2) Destination (free text or IATA)
     dest_input = st.text_input("Enter Destination (city or IATA code)", "LAX").strip()
 
     # 3) Trip type
     trip_type = st.radio("Trip Type", ["One-way", "Round-trip"])
 
     # 4) Dates
-    earliest    = date.today() + timedelta(days=1)
-    depart_date = st.date_input("Departure Date", earliest)
+    tomorrow    = date.today() + timedelta(days=1)
+    depart_date = st.date_input("Departure Date", tomorrow)
     if trip_type=="Round-trip":
         length     = st.slider("Trip Length (days)", 1, 30, 7)
         return_date= depart_date + timedelta(days=length)
@@ -126,14 +113,14 @@ def main():
 
     # 7) Search button
     if st.button("🔍 Search Flights"):
-        # Resolve destination code
+        # Resolve destination
         if len(dest_input)==3 and dest_input.isalpha():
             dest_code = dest_input.upper()
         else:
             st.info("Resolving destination…")
             dest_code = get_place_id(dest_input)
         if not dest_code:
-            st.error("🚫 Could not resolve destination; try a city name or valid IATA.")
+            st.error("🚫 Could not resolve destination; try a city name or IATA code.")
             return
 
         st.info("Searching flights…")
@@ -144,18 +131,20 @@ def main():
             min_price, max_price
         )
         if err:
-            st.error(err); return
+            st.error(err)
+            return
         if not results:
-            st.warning("No flights found."); return
+            st.warning("No flights found.")
+            return
 
         st.success(f"Found {len(results)} flights:")
         for i, r in enumerate(results, 1):
             price = r.get("price", {}).get("raw", r.get("price","N/A"))
             frm   = r.get("placeFrom",{}).get("code", origin_code)
             to    = r.get("placeTo",{}).get("code", dest_code)
-            airline = r.get("airline",{}).get("name","")
-            st.markdown(f"**{i}. {frm} → {to} — ${price}**  \nAirline: {airline}")
-            st.json(r)  # raw JSON for you to refine
+            airline = r.get("airline",{}).get("name","Unknown")
+            st.markdown(f"**{i}. {frm} → {to} — ${price}**\n\nAirline: {airline}")
+            st.json(r)  # raw JSON dump for you to refine
 
 if __name__=="__main__":
     main()

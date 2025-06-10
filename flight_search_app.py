@@ -12,20 +12,60 @@ HEADERS  = {
     "x-rapidapi-key":  API_KEY
 }
 
-# ─── FULL AIRPORT LISTS BY REGION ──────────────────────────────────────────────
+# ─── Airports Organized by Region → Country → IATA Codes ───────────────────────
 REGION_AIRPORTS = {
-    "North America": ["LAX","JFK","ORD","ATL","DFW","MIA","SEA","SFO","YYZ","YVR"],
-    "Central America": ["PTY","SAL","GUA","SJO"],
-    "South America": ["GRU","EZE","SCL","BOG","LIM"],
-    "Europe": ["LHR","CDG","FRA","AMS","MAD","BCN","ZRH","MUC","FCO","IST"],
-    "Asia": ["HKG","BKK","SIN","NRT","PVG","ICN","DEL","DXB","KUL","MNL"],
-    "Oceania": ["SYD","MEL","AKL","BNE","PER"],
-    "Africa": ["JNB","CAI","CMN","NBO","ACC"],
-    "Middle East": ["DXB","DOH","JED","RUH","IST"]
+    "North America": {
+        "United States": ["LAX","JFK","ORD","ATL","DFW","MIA","SEA","SFO","DTW","DEN"],
+        "Canada":        ["YYZ","YVR","YUL","YOW","YWG"],
+        "Mexico":        ["MEX","CUN","GDL","MTY"]
+    },
+    "Central America": {
+        "Panama":       ["PTY"],
+        "El Salvador":  ["SAL"],
+        "Guatemala":    ["GUA"],
+        "Costa Rica":   ["SJO"]
+    },
+    "South America": {
+        "Brazil":       ["GRU","GIG","BSB"],
+        "Argentina":    ["EZE","AEP"],
+        "Chile":        ["SCL"],
+        "Colombia":     ["BOG"],
+        "Peru":         ["LIM"]
+    },
+    "Europe": {
+        "United Kingdom": ["LHR","LGW","MAN"],
+        "France":         ["CDG","ORY"],
+        "Germany":        ["FRA","MUC"],
+        "Spain":          ["MAD","BCN"],
+        "Netherlands":    ["AMS"],
+        "Italy":          ["FCO","MXP"]
+    },
+    "Asia": {
+        "China":          ["PEK","PVG","CAN"],
+        "Japan":          ["NRT","KIX"],
+        "Singapore":      ["SIN"],
+        "Thailand":       ["BKK"],
+        "UAE":            ["DXB","AUH"]
+    },
+    "Oceania": {
+        "Australia":      ["SYD","MEL","BNE","PER"],
+        "New Zealand":    ["AKL","WLG"]
+    },
+    "Africa": {
+        "South Africa":   ["JNB","CPT"],
+        "Egypt":          ["CAI"],
+        "Morocco":        ["CMN"]
+    },
+    "Middle East": {
+        "Qatar":          ["DOH"],
+        "Saudi Arabia":   ["JED","RUH"],
+        "Israel":         ["TLV"]
+    }
 }
+
 ALL_REGIONS = list(REGION_AIRPORTS.keys())
 
-# ─── Helpers ─────────────────────────────────────────────────────────────────
+# ─── Helper Functions ─────────────────────────────────────────────────────────
 
 def fmt_dt(iso: str) -> str:
     dt = datetime.fromisoformat(iso)
@@ -35,8 +75,8 @@ def search_cheapest(
     trip_type, origin, dest, depart, rtn,
     adults, children, min_price, max_price
 ):
-    ep = "search-one-way" if trip_type=="One-way" else "search-roundtrip"
-    url = f"{BASE_URL}/{ep}"
+    endpoint = "search-one-way" if trip_type=="One-way" else "search-roundtrip"
+    url = f"{BASE_URL}/{endpoint}"
     params = {
         "placeIdFrom": origin,
         "placeIdTo":   dest,
@@ -60,6 +100,7 @@ def search_cheapest(
     results = itins.get("results", [])
     if not results:
         return None
+    # Return the single cheapest result
     return min(results, key=lambda x: x.get("price",{}).get("raw", float('inf')))
 
 def build_row(origin, result):
@@ -76,31 +117,27 @@ def build_row(origin, result):
         arr = fmt_dt(legs[-1]["arrival"])
     else:
         dep = arr = ""
-    # Layover details
+    # Layovers
     layovers = []
     for i in range(len(legs)-1):
-        stop_info = legs[i]["destination"]
-        code = stop_info.get("displayCode","")
-        name = stop_info.get("name","")
-        # compute duration
+        stop = legs[i]["destination"]
+        airport_name = stop.get("name","")
+        code         = stop.get("displayCode","")
         arr_t = datetime.fromisoformat(legs[i]["arrival"])
         dep_t = datetime.fromisoformat(legs[i+1]["departure"])
         delta = dep_t - arr_t
         hrs, rem = divmod(delta.seconds,3600)
         mins = rem//60
-        layovers.append(f"{name} ({code}) – {hrs}h{mins:02d}m")
+        layovers.append(f"{airport_name} ({code}) – {hrs}h{mins:02d}m")
     stops_str = f"{len(layovers)} stop(s)" + (": " + "; ".join(layovers) if layovers else "")
     # Airline
-    if legs:
-        mk = legs[0].get("carriers",{}).get("marketing",[])
-        airline = mk[0].get("name","") if mk else ""
-    else:
-        airline = ""
-    # Flight numbers
+    mk = legs[0].get("carriers",{}).get("marketing",[]) if legs else []
+    airline = mk[0].get("name","") if mk else ""
+    # Flight #
     fnums = [seg.get("flightNumber","") for seg in legs]
     flights = ", ".join([f for f in fnums if f])
     # Price
-    price = result.get("price",{}).get("raw",None)
+    price = result.get("price",{}).get("raw", None)
 
     return {
         "To":          to,
@@ -116,24 +153,24 @@ def build_row(origin, result):
 
 def main():
     st.set_page_config(page_title="Family Flight Finder", layout="wide")
-    st.title("✈️ Family Flight Finder (by Region & Cost)")
+    st.title("✈️ Family Flight Finder (by Region & Country)")
 
-    # 1) Departure Airport
-    origin_map = {
-        "Detroit (DTW)": "DTW",
-        "Windsor (YQG)": "YQG",
-        "Toronto (YYZ)": "YYZ"
-    }
+    # 1) Departure
+    origin_map = {"Detroit (DTW)": "DTW", "Windsor (YQG)": "YQG", "Toronto (YYZ)": "YYZ"}
     origin_lbl = st.selectbox("Departure Airport", list(origin_map.keys()))
     origin     = origin_map[origin_lbl]
 
     # 2) Region
     region = st.selectbox("Destination Region", ALL_REGIONS)
 
-    # 3) Trip Type
+    # 3) Country multi-select (based on chosen region)
+    available_countries = list(REGION_AIRPORTS[region].keys())
+    selected_countries  = st.multiselect("Destination Country(ies)", available_countries, default=available_countries)
+
+    # 4) Trip Type
     trip_type = st.radio("Trip Type", ["One-way", "Round-trip"], horizontal=True)
 
-    # 4) Dates
+    # 5) Dates
     tomorrow    = date.today() + timedelta(days=1)
     depart_date = st.date_input("Departure Date", tomorrow)
     if trip_type=="Round-trip":
@@ -143,40 +180,42 @@ def main():
     else:
         return_date = None
 
-    # 5) Passengers
+    # 6) Passengers
     adults   = st.slider("Adults", 1, 6, 2)
     children = st.slider("Children", 0, 4, 1)
 
-    # 6) Price filters
+    # 7) Price filters
     min_text = st.text_input("Min Price ($), blank=any", "")
     max_text = st.text_input("Max Price ($), blank=any", "")
     try:
         min_price = int(min_text) if min_text.strip() else None
         max_price = int(max_text) if max_text.strip() else None
     except ValueError:
-        st.error("Price fields must be numeric or blank")
+        st.error("Price must be numeric or blank")
         return
 
-    # 7) Search button
-    if st.button("🔍 Search by Region"):
-        st.info(f"Scanning airports in {region}...")
+    # 8) Search
+    if st.button("🔍 Search by Region & Country"):
+        st.info(f"Scanning airports in {region} → {selected_countries}…")
         rows = []
-        for dest in REGION_AIRPORTS[region]:
-            res = search_cheapest(
-                trip_type, origin, dest,
-                depart_date, return_date,
-                adults, children,
-                min_price, max_price
-            )
-            if res:
-                rows.append(build_row(origin, res))
+        for country in selected_countries:
+            airports = REGION_AIRPORTS[region][country]
+            for dest in airports:
+                result = search_cheapest(
+                    trip_type, origin, dest,
+                    depart_date, return_date,
+                    adults, children,
+                    min_price, max_price
+                )
+                if result:
+                    rows.append(build_row(origin, result))
 
         if not rows:
-            st.warning("No flights found for that region with your filters.")
+            st.warning("No flights found.")
             return
 
         df = pd.DataFrame(rows).sort_values("Price (USD)").head(10)
-        st.write(f"### Top 10 cheapest flights to {region}")
+        st.write(f"### Top 10 cheapest flights to {region} ({', '.join(selected_countries)})")
         st.dataframe(df.reset_index(drop=True), use_container_width=True)
 
 if __name__=="__main__":

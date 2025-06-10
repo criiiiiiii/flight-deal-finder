@@ -19,16 +19,20 @@ destination = st.text_input("Destination SkyID (e.g. NYCA, MSYA, LONA)", "NYCA")
 # --- Trip Type ---
 trip_type = st.radio("Trip Type", ["One-way", "Round-trip"])
 
-# --- Date + Trip Length ---
+# --- Dates ---
 departure_date = st.date_input("Departure Date", date.today() + timedelta(days=30))
 trip_length = st.slider("Trip Length (days)", min_value=3, max_value=21, value=7)
 return_date = departure_date + timedelta(days=trip_length)
 
-# --- Info Display ---
+# --- Passengers ---
+adults = st.slider("Adults", min_value=1, max_value=6, value=2)
+children = st.slider("Children", min_value=0, max_value=4, value=2)
+
+# --- Trip Summary ---
 if trip_type == "Round-trip":
-    st.caption(f"🗓️ Your trip: {departure_date.strftime('%Y-%m-%d')} → {return_date.strftime('%Y-%m-%d')}")
+    st.caption(f"🗓️ Round-trip: {departure_date.strftime('%Y-%m-%d')} → {return_date.strftime('%Y-%m-%d')}")
 else:
-    st.caption(f"🗓️ One-way trip: departing {departure_date.strftime('%Y-%m-%d')}")
+    st.caption(f"🗓️ One-way trip on {departure_date.strftime('%Y-%m-%d')}")
 
 # --- API Call ---
 if st.button("🔍 Search Flights"):
@@ -36,7 +40,9 @@ if st.button("🔍 Search Flights"):
 
     querystring = {
         "originSkyId": origin_sky_id,
-        "destinationSkyId": destination
+        "destinationSkyId": destination,
+        "adults": str(adults),
+        "children": str(children)
     }
 
     headers = {
@@ -45,7 +51,7 @@ if st.button("🔍 Search Flights"):
     }
 
     if trip_type == "Round-trip":
-        st.info("🔁 Round-trip selected, but only one-way API is supported right now. Showing outbound flights only.")
+        st.info("🔁 Round-trip selected, but only one-way results are supported for now.")
 
     response = requests.get(url, headers=headers, params=querystring)
 
@@ -73,4 +79,5 @@ if st.button("🔍 Search Flights"):
             st.warning("No flights found.")
     else:
         st.error(f"API request failed with status code {response.status_code}")
+
 
